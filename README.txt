@@ -1,8 +1,8 @@
 js.mediaelement
-***************
+===============
 
 Introduction
-============
+------------
 
 This library packages `MediaElement.js`_ for `fanstatic`_.
 

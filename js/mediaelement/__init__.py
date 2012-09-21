@@ -2,6 +2,8 @@
 
 from fanstatic import Library
 from fanstatic import Resource
+from js.jquery import jquery
+
 
 library = Library(
     'mediaelement.js',
@@ -21,11 +23,12 @@ mediaelementplayer_css = Resource(
 mediaelementplayer_js = Resource(
     library,
     'mediaelementplayer.js',
-    minified="mediaelementplayer.min.js"
+    minified="mediaelementplayer.min.js",
+    depends=[jquery, ]
 )
 mediaelementandplayer = Resource(
     library,
     'mediaelement-and-player.js',
     minified="mediaelement-and-player.min.js",
-    depends=[mediaelementplayer_css, ]
+    depends=[jquery, mediaelementplayer_css, ]
 )
