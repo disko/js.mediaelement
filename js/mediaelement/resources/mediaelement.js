@@ -7,15 +7,15 @@
 * for browsers that don't understand HTML5 or can't play the provided codec
 * Can play MP4 (H.264), Ogg, WebM, FLV, WMV, WMA, ACC, and MP3
 *
-* Copyright 2010-2012, John Dyer (http://j.hn)
-* Dual licensed under the MIT or GPL Version 2 licenses.
+* Copyright 2010-2013, John Dyer (http://j.hn)
+* License: MIT
 *
 */
 // Namespace
 var mejs = mejs || {};
 
 // version number
-mejs.version = '2.9.3';
+mejs.version = '2.12.0';
 
 // player number (for missing, same id attr)
 mejs.meIndex = 0;
@@ -26,14 +26,14 @@ mejs.plugins = {
 		{version: [3,0], types: ['video/mp4','video/m4v','video/mov','video/wmv','audio/wma','audio/m4a','audio/mp3','audio/wav','audio/mpeg']}
 	],
 	flash: [
-		{version: [9,0,124], types: ['video/mp4','video/m4v','video/mov','video/flv','video/x-flv','audio/flv','audio/x-flv','audio/mp3','audio/m4a','audio/mpeg', 'video/youtube', 'video/x-youtube']}
+		{version: [9,0,124], types: ['video/mp4','video/m4v','video/mov','video/flv','video/rtmp','video/x-flv','audio/flv','audio/x-flv','audio/mp3','audio/m4a','audio/mpeg', 'video/youtube', 'video/x-youtube']}
 		//,{version: [12,0], types: ['video/webm']} // for future reference (hopefully!)
 	],
 	youtube: [
-		{version: null, types: ['video/youtube', 'video/x-youtube']}
+		{version: null, types: ['video/youtube', 'video/x-youtube', 'audio/youtube', 'audio/x-youtube']}
 	],
 	vimeo: [
-		{version: null, types: ['video/vimeo']}
+		{version: null, types: ['video/vimeo', 'video/x-vimeo']}
 	]
 };
 
@@ -56,27 +56,47 @@ mejs.Utility = {
 		var
 			i = 0,
 			j,
-			path = '',
-			name = '',
-			script,
+			codePath = '',
+			testname = '',
+			slashPos,
+			filenamePos,
+			scriptUrl,
+			scriptPath,			
+			scriptFilename,
 			scripts = document.getElementsByTagName('script'),
 			il = scripts.length,
 			jl = scriptNames.length;
-
+			
+		// go through all <script> tags
 		for (; i < il; i++) {
-			script = scripts[i].src;
+			scriptUrl = scripts[i].src;
+			slashPos = scriptUrl.lastIndexOf('/');
+			if (slashPos > -1) {
+				scriptFilename = scriptUrl.substring(slashPos + 1);
+				scriptPath = scriptUrl.substring(0, slashPos + 1);
+			} else {
+				scriptFilename = scriptUrl;
+				scriptPath = '';			
+			}
+			
+			// see if any <script> tags have a file name that matches the 
 			for (j = 0; j < jl; j++) {
-				name = scriptNames[j];
-				if (script.indexOf(name) > -1) {
-					path = script.substring(0, script.indexOf(name));
+				testname = scriptNames[j];
+				filenamePos = scriptFilename.indexOf(testname);
+				if (filenamePos > -1) {
+					codePath = scriptPath;
 					break;
 				}
 			}
-			if (path !== '') {
+			
+			// if we found a path, then break and return it
+			if (codePath !== '') {
 				break;
 			}
 		}
-		return path;
+		
+		// send the best path back
+		return codePath;
 	},
 	secondsToTimeCode: function(time, forceHours, showFrameCount, fps) {
 		//add framecount
@@ -122,10 +142,33 @@ mejs.Utility = {
 		return tc_in_seconds;
 	},
 	
+
+	convertSMPTEtoSeconds: function (SMPTE) {
+		if (typeof SMPTE != 'string') 
+			return false;
+
+		SMPTE = SMPTE.replace(',', '.');
+		
+		var secs = 0,
+			decimalLen = (SMPTE.indexOf('.') != -1) ? SMPTE.split('.')[1].length : 0,
+			multiplier = 1;
+		
+		SMPTE = SMPTE.split(':').reverse();
+		
+		for (var i = 0; i < SMPTE.length; i++) {
+			multiplier = 1;
+			if (i > 0) {
+				multiplier = Math.pow(60, i); 
+			}
+			secs += Number(SMPTE[i]) * multiplier;
+		}
+		return Number(secs.toFixed(decimalLen));
+	},	
+	
 	/* borrowed from SWFObject: http://code.google.com/p/swfobject/source/browse/trunk/swfobject/src/swfobject.js#474 */
 	removeSwf: function(id) {
 		var obj = document.getElementById(id);
-		if (obj && obj.nodeName == "OBJECT") {
+		if (obj && /object|embed/i.test(obj.nodeName)) {
 			if (mejs.MediaFeatures.isIE) {
 				obj.style.display = "none";
 				(function(){
@@ -273,6 +316,7 @@ mejs.MediaFeatures = {
 		t.isiOS = t.isiPhone || t.isiPad;
 		t.isAndroid = (ua.match(/android/i) !== null);
 		t.isBustedAndroid = (ua.match(/android 2\.[12]/) !== null);
+		t.isBustedNativeHTTPS = (location.protocol === 'https:' && (ua.match(/android [12]\./) !== null || ua.match(/macintosh.* version.* safari/) !== null));
 		t.isIE = (nav.appName.toLowerCase().indexOf("microsoft") != -1);
 		t.isChrome = (ua.match(/chrome/gi) !== null);
 		t.isFirefox = (ua.match(/firefox/gi) !== null);
@@ -280,6 +324,10 @@ mejs.MediaFeatures = {
 		t.isGecko = (ua.match(/gecko/gi) !== null) && !t.isWebkit;
 		t.isOpera = (ua.match(/opera/gi) !== null);
 		t.hasTouch = ('ontouchstart' in window);
+		
+		// borrowed from Modernizr
+		t.svg = !! document.createElementNS &&
+				!! document.createElementNS('http://www.w3.org/2000/svg','svg').createSVGRect;
 
 		// create HTML5 media elements for IE before 9, get a <video> element for fullscreen detection
 		for (i=0; i<html5Elements.length; i++) {
@@ -287,6 +335,13 @@ mejs.MediaFeatures = {
 		}
 		
 		t.supportsMediaTag = (typeof v.canPlayType !== 'undefined' || t.isBustedAndroid);
+
+		// Fix for IE9 on Windows 7N / Windows 7KN (Media Player not installer)
+		try{
+			v.canPlayType("video/mp4");
+		}catch(e){
+			t.supportsMediaTag = false;
+		}
 
 		// detect native JavaScript fullscreen (Safari/Firefox only, Chrome still fails)
 		
@@ -350,7 +405,6 @@ mejs.MediaFeatures = {
 };
 mejs.MediaFeatures.init();
 
-
 /*
 extension methods to <video> or <audio> object to bring it into parity with PluginMediaElement (see below)
 */
@@ -395,6 +449,7 @@ mejs.HtmlMediaElement = {
 				media = url[i];
 				if (this.canPlayType(media.type)) {
 					this.src = media.src;
+					break;
 				}
 			}
 		}
@@ -414,6 +469,7 @@ mejs.PluginMediaElement = function (pluginid, pluginType, mediaUrl) {
 	this.pluginType = pluginType;
 	this.src = mediaUrl;
 	this.events = {};
+	this.attributes = {};
 };
 
 // JavaScript values and ExternalInterface methods that match HTML5 video properties methods
@@ -504,18 +560,18 @@ mejs.PluginMediaElement.prototype = {
 				for (j=0; j<pluginInfo.types.length; j++) {
 					// find plugin that can play the type
 					if (type == pluginInfo.types[j]) {
-						return true;
+						return 'probably';
 					}
 				}
 			}
 		}
 
-		return false;
+		return '';
 	},
 	
 	positionFullscreenButton: function(x,y,visibleAndAbove) {
 		if (this.pluginApi != null && this.pluginApi.positionFullscreenButton) {
-			this.pluginApi.positionFullscreenButton(x,y,visibleAndAbove);
+			this.pluginApi.positionFullscreenButton(Math.floor(x),Math.floor(y),visibleAndAbove);
 		}
 	},
 	
@@ -542,6 +598,7 @@ mejs.PluginMediaElement.prototype = {
 				if (this.canPlayType(media.type)) {
 					this.pluginApi.setSrc(mejs.Utility.absolutizeUrl(media.src));
 					this.src = mejs.Utility.absolutizeUrl(url);
+					break;
 				}
 			}
 		}
@@ -654,7 +711,6 @@ mejs.PluginMediaElement.prototype = {
 	// end: fake events
 	
 	// fake DOM attribute methods
-	attributes: {},
 	hasAttribute: function(name){
 		return (name in this.attributes);  
 	},
@@ -673,6 +729,7 @@ mejs.PluginMediaElement.prototype = {
 
 	remove: function() {
 		mejs.Utility.removeSwf(this.pluginElement.id);
+		mejs.MediaPluginBridge.unregisterPluginElement(this.pluginElement.id);
 	}
 };
 
@@ -685,6 +742,11 @@ mejs.MediaPluginBridge = {
 	registerPluginElement: function (id, pluginMediaElement, htmlMediaElement) {
 		this.pluginMediaElements[id] = pluginMediaElement;
 		this.htmlMediaElements[id] = htmlMediaElement;
+	},
+
+	unregisterPluginElement: function (id) {
+		delete this.pluginMediaElements[id];
+		delete this.htmlMediaElements[id];
 	},
 
 	// when Flash/Silverlight is ready, it calls out to this method
@@ -720,9 +782,6 @@ mejs.MediaPluginBridge = {
 			i,
 			bufferedTime,
 			pluginMediaElement = this.pluginMediaElements[id];
-
-		pluginMediaElement.ended = false;
-		pluginMediaElement.paused = true;
 
 		// fake event object to mimic real HTML media event.
 		e = {
@@ -774,8 +833,14 @@ mejs.MediaElementDefaults = {
 	pluginPath: mejs.Utility.getScriptPath(['mediaelement.js','mediaelement.min.js','mediaelement-and-player.js','mediaelement-and-player.min.js']),
 	// name of flash file
 	flashName: 'flashmediaelement.swf',
+	// streamer for RTMP streaming
+	flashStreamer: '',
 	// turns on the smoothing filter in Flash
 	enablePluginSmoothing: false,
+	// enabled pseudo-streaming (seek) on .mp4 files
+	enablePseudoStreaming: false,
+	// start query parameter sent to server for pseudo-streaming
+	pseudoStreamingStartQueryParam: 'start',
 	// name of silverlight file
 	silverlightName: 'silverlightmediaelement.xap',
 	// default if the <video width> is not specified
@@ -874,7 +939,8 @@ mejs.HtmlMediaElementShim = {
 			pluginName,
 			pluginVersions,
 			pluginInfo,
-			dummy;
+			dummy,
+			media;
 			
 		// STEP 1: Get URL and type from <video src> or <source src>
 
@@ -904,7 +970,11 @@ mejs.HtmlMediaElementShim = {
 				if (n.nodeType == 1 && n.tagName.toLowerCase() == 'source') {
 					src = n.getAttribute('src');
 					type = this.formatType(src, n.getAttribute('type'));
-					mediaFiles.push({type:type, url:src});
+					media = n.getAttribute('media');
+
+					if (!media || !window.matchMedia || (window.matchMedia && window.matchMedia(media).matches)) {
+						mediaFiles.push({type:type, url:src});
+					}
 				}
 			}
 		}
@@ -927,7 +997,7 @@ mejs.HtmlMediaElementShim = {
 		
 
 		// test for native playback first
-		if (supportsMediaTag && (options.mode === 'auto' || options.mode === 'auto_plugin' || options.mode === 'native')) {
+		if (supportsMediaTag && (options.mode === 'auto' || options.mode === 'auto_plugin' || options.mode === 'native')  && !(mejs.MediaFeatures.isBustedNativeHTTPS)) {
 						
 			if (!isMediaTag) {
 
@@ -1035,7 +1105,8 @@ mejs.HtmlMediaElementShim = {
 	},
 	
 	getTypeFromFile: function(url) {
-		var ext = url.substring(url.lastIndexOf('.') + 1);
+		url = url.split('?')[0];
+		var ext = url.substring(url.lastIndexOf('.') + 1).toLowerCase();
 		return (/(mp4|m4v|ogg|ogv|webm|webmv|flv|wmv|mpeg|mov)/gi.test(ext) ? 'video' : 'audio') + '/' + this.getTypeFromExtension(ext);
 	},
 	
@@ -1070,9 +1141,13 @@ mejs.HtmlMediaElementShim = {
 			errorContainer.style.height = htmlMediaElement.height + 'px';
 		} catch (e) {}
 
-		errorContainer.innerHTML = (poster !== '') ?
-			'<a href="' + playback.url + '"><img src="' + poster + '" width="100%" height="100%" /></a>' :
-			'<a href="' + playback.url + '"><span>Download File</span></a>';
+    if (options.customError) {
+      errorContainer.innerHTML = options.customError;
+    } else {
+      errorContainer.innerHTML = (poster !== '') ?
+        '<a href="' + playback.url + '"><img src="' + poster + '" width="100%" height="100%" /></a>' :
+        '<a href="' + playback.url + '"><span>' + mejs.i18n.t('Download File') + '</span></a>';
+    }
 
 		htmlMediaElement.parentNode.insertBefore(errorContainer, htmlMediaElement);
 		htmlMediaElement.style.display = 'none';
@@ -1114,8 +1189,8 @@ mejs.HtmlMediaElementShim = {
 		}
 
 		if (playback.isVideo) {
-			width = (options.videoWidth > 0) ? options.videoWidth : (htmlMediaElement.getAttribute('width') !== null) ? htmlMediaElement.getAttribute('width') : options.defaultVideoWidth;
-			height = (options.videoHeight > 0) ? options.videoHeight : (htmlMediaElement.getAttribute('height') !== null) ? htmlMediaElement.getAttribute('height') : options.defaultVideoHeight;
+			width = (options.pluginWidth > 0) ? options.pluginWidth : (options.videoWidth > 0) ? options.videoWidth : (htmlMediaElement.getAttribute('width') !== null) ? htmlMediaElement.getAttribute('width') : options.defaultVideoWidth;
+			height = (options.pluginHeight > 0) ? options.pluginHeight : (options.videoHeight > 0) ? options.videoHeight : (htmlMediaElement.getAttribute('height') !== null) ? htmlMediaElement.getAttribute('height') : options.defaultVideoHeight;
 		
 			// in case of '%' make sure it's encoded
 			width = mejs.Utility.encodeUrl(width);
@@ -1151,7 +1226,9 @@ mejs.HtmlMediaElementShim = {
 			'width=' + width,
 			'startvolume=' + options.startVolume,
 			'timerrate=' + options.timerRate,
-			'height=' + height];
+			'flashstreamer=' + options.flashStreamer,
+			'height=' + height,
+      'pseudostreamstart=' + options.pseudoStreamingStartQueryParam];
 
 		if (playback.url !== null) {
 			if (playback.method == 'flash') {
@@ -1166,6 +1243,9 @@ mejs.HtmlMediaElementShim = {
 		if (options.enablePluginSmoothing) {
 			initVars.push('smoothing=true');
 		}
+    if (options.enablePseudoStreaming) {
+      initVars.push('pseudostreaming=true');
+    }
 		if (controls) {
 			initVars.push('controls=true'); // shows controls in the plugin if desired
 		}
@@ -1176,7 +1256,7 @@ mejs.HtmlMediaElementShim = {
 		switch (playback.method) {
 			case 'silverlight':
 				container.innerHTML =
-'<object data="data:application/x-silverlight-2," type="application/x-silverlight-2" id="' + pluginid + '" name="' + pluginid + '" width="' + width + '" height="' + height + '">' +
+'<object data="data:application/x-silverlight-2," type="application/x-silverlight-2" id="' + pluginid + '" name="' + pluginid + '" width="' + width + '" height="' + height + '" class="mejs-shim">' +
 '<param name="initParams" value="' + initVars.join(',') + '" />' +
 '<param name="windowless" value="true" />' +
 '<param name="background" value="black" />' +
@@ -1193,7 +1273,7 @@ mejs.HtmlMediaElementShim = {
 					container.appendChild(specialIEContainer);
 					specialIEContainer.outerHTML =
 '<object classid="clsid:D27CDB6E-AE6D-11cf-96B8-444553540000" codebase="//download.macromedia.com/pub/shockwave/cabs/flash/swflash.cab" ' +
-'id="' + pluginid + '" width="' + width + '" height="' + height + '">' +
+'id="' + pluginid + '" width="' + width + '" height="' + height + '" class="mejs-shim">' +
 '<param name="movie" value="' + options.pluginPath + options.flashName + '?x=' + (new Date()) + '" />' +
 '<param name="flashvars" value="' + initVars.join('&amp;') + '" />' +
 '<param name="quality" value="high" />' +
@@ -1218,7 +1298,8 @@ mejs.HtmlMediaElementShim = {
 'src="' + options.pluginPath + options.flashName + '" ' +
 'flashvars="' + initVars.join('&') + '" ' +
 'width="' + width + '" ' +
-'height="' + height + '"></embed>';
+'height="' + height + '" ' +
+'class="mejs-shim"></embed>';
 				}
 				break;
 			
@@ -1251,15 +1332,19 @@ mejs.HtmlMediaElementShim = {
 				
 				pluginMediaElement.vimeoid = playback.url.substr(playback.url.lastIndexOf('/')+1);
 				
+				container.innerHTML ='<iframe src="http://player.vimeo.com/video/' + pluginMediaElement.vimeoid + '?portrait=0&byline=0&title=0" width="' + width +'" height="' + height +'" frameborder="0" class="mejs-shim"></iframe>';
+				
+				/*
 				container.innerHTML =
-					'<object width="' + width + '" height="' + height + '">' +
+					'<object width="' + width + '" height="' + height + '" class="mejs-shim">' +
 						'<param name="allowfullscreen" value="true" />' +
 						'<param name="allowscriptaccess" value="always" />' +
 						'<param name="flashvars" value="api=1" />' + 
 						'<param name="movie" value="http://vimeo.com/moogaloop.swf?clip_id=' + pluginMediaElement.vimeoid  + '&amp;server=vimeo.com&amp;show_title=0&amp;show_byline=0&amp;show_portrait=0&amp;color=00adef&amp;fullscreen=1&amp;autoplay=0&amp;loop=0" />' +
-						'<embed src="//vimeo.com/moogaloop.swf?api=1&amp;clip_id=' + pluginMediaElement.vimeoid + '&amp;server=vimeo.com&amp;show_title=0&amp;show_byline=0&amp;show_portrait=0&amp;color=00adef&amp;fullscreen=1&amp;autoplay=0&amp;loop=0" type="application/x-shockwave-flash" allowfullscreen="true" allowscriptaccess="always" width="' + width + '" height="' + height + '"></embed>' +
+						'<embed src="//vimeo.com/moogaloop.swf?api=1&amp;clip_id=' + pluginMediaElement.vimeoid + '&amp;server=vimeo.com&amp;show_title=0&amp;show_byline=0&amp;show_portrait=0&amp;color=00adef&amp;fullscreen=1&amp;autoplay=0&amp;loop=0" type="application/x-shockwave-flash" allowfullscreen="true" allowscriptaccess="always" width="' + width + '" height="' + height + '" class="mejs-shim"></embed>' +
 					'</object>';
-					
+					*/
+									
 				break;			
 		}
 		// hide original element
@@ -1329,7 +1414,7 @@ mejs.YouTubeApi = {
 	loadIframeApi: function() {
 		if (!this.isIframeStarted) {
 			var tag = document.createElement('script');
-			tag.src = "http://www.youtube.com/player_api";
+			tag.src = "//www.youtube.com/player_api";
 			var firstScriptTag = document.getElementsByTagName('script')[0];
 			firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 			this.isIframeStarted = true;
@@ -1440,21 +1525,21 @@ mejs.YouTubeApi = {
 		/*
 		settings.container.innerHTML =
 			'<object type="application/x-shockwave-flash" id="' + settings.pluginId + '" data="//www.youtube.com/apiplayer?enablejsapi=1&amp;playerapiid=' + settings.pluginId  + '&amp;version=3&amp;autoplay=0&amp;controls=0&amp;modestbranding=1&loop=0" ' +
-				'width="' + settings.width + '" height="' + settings.height + '" style="visibility: visible; ">' +
+				'width="' + settings.width + '" height="' + settings.height + '" style="visibility: visible; " class="mejs-shim">' +
 				'<param name="allowScriptAccess" value="always">' +
 				'<param name="wmode" value="transparent">' +
 			'</object>';
 		*/
 
 		var specialIEContainer,
-			youtubeUrl = 'http://www.youtube.com/apiplayer?enablejsapi=1&amp;playerapiid=' + settings.pluginId  + '&amp;version=3&amp;autoplay=0&amp;controls=0&amp;modestbranding=1&loop=0';
+			youtubeUrl = '//www.youtube.com/apiplayer?enablejsapi=1&amp;playerapiid=' + settings.pluginId  + '&amp;version=3&amp;autoplay=0&amp;controls=0&amp;modestbranding=1&loop=0';
 			
 		if (mejs.MediaFeatures.isIE) {
 			
 			specialIEContainer = document.createElement('div');
 			settings.container.appendChild(specialIEContainer);
 			specialIEContainer.outerHTML = '<object classid="clsid:D27CDB6E-AE6D-11cf-96B8-444553540000" codebase="//download.macromedia.com/pub/shockwave/cabs/flash/swflash.cab" ' +
-'id="' + settings.pluginId + '" width="' + settings.width + '" height="' + settings.height + '">' +
+'id="' + settings.pluginId + '" width="' + settings.width + '" height="' + settings.height + '" class="mejs-shim">' +
 	'<param name="movie" value="' + youtubeUrl + '" />' +
 	'<param name="wmode" value="transparent" />' +
 	'<param name="allowScriptAccess" value="always" />' +
@@ -1463,7 +1548,7 @@ mejs.YouTubeApi = {
 		} else {
 		settings.container.innerHTML =
 			'<object type="application/x-shockwave-flash" id="' + settings.pluginId + '" data="' + youtubeUrl + '" ' +
-				'width="' + settings.width + '" height="' + settings.height + '" style="visibility: visible; ">' +
+				'width="' + settings.width + '" height="' + settings.height + '" style="visibility: visible; " class="mejs-shim">' +
 				'<param name="allowScriptAccess" value="always">' +
 				'<param name="wmode" value="transparent">' +
 			'</object>';
@@ -1485,7 +1570,7 @@ mejs.YouTubeApi = {
 		// load the youtube video
 		player.cueVideoById(settings.videoId);
 		
-		var callbackName = settings.containerId + '_callback'
+		var callbackName = settings.containerId + '_callback';
 		
 		window[callbackName] = function(e) {
 			mejs.YouTubeApi.handleStateChange(e, player, pluginMediaElement);
@@ -1544,4 +1629,262 @@ function onYouTubePlayerReady(id) {
 
 window.mejs = mejs;
 window.MediaElement = mejs.MediaElement;
+
+/*!
+ * Adds Internationalization and localization to objects.
+ *
+ * What is the concept beyond i18n?
+ *   http://en.wikipedia.org/wiki/Internationalization_and_localization
+ *
+ *
+ * This file both i18n methods and locale which is used to translate
+ * strings into other languages.
+ *
+ * Default translations are not available, you have to add them
+ * through locale objects which are named exactly as the langcode
+ * they stand for. The default language is always english (en).
+ *
+ *
+ * Wrapper built to be able to attach the i18n object to
+ * other objects without changing more than one line.
+ *
+ *
+ * LICENSE:
+ *
+ *   The i18n file uses methods from the Drupal project (drupal.js):
+ *     - i18n.methods.t() (modified)
+ *     - i18n.methods.checkPlain() (full copy)
+ *     - i18n.methods.formatString() (full copy)
+ *
+ *   The Drupal project is (like mediaelementjs) licensed under GPLv2.
+ *    - http://drupal.org/licensing/faq/#q1
+ *    - https://github.com/johndyer/mediaelement
+ *    - http://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+ *
+ *
+ * @author
+ *   Tim Latz (latz.tim@gmail.com)
+ *
+ * @see
+ *   me-i18n-locale.js
+ *
+ * @params
+ *  - context - document, iframe ..
+ *  - exports - CommonJS, window ..
+ *
+ */
+;(function(context, exports, undefined) {
+    "use strict";
+    var i18n = {
+        "locale": {
+            "strings" : {}
+        },
+        "methods" : {}
+    };
+// start i18n
+
+
+    /**
+     * Get the current browser's language
+     *
+     * @see: i18n.methods.t()
+     */
+    i18n.locale.getLanguage = function () {
+        return i18n.locale || {
+            "language" : navigator.language
+        };
+    };
+
+    /**
+     * Store the language the locale object was initialized with
+     */
+    i18n.locale.INIT_LANGUAGE = i18n.locale.getLanguage();
+
+
+    /**
+     * Encode special characters in a plain-text string for display as HTML.
+     */
+    i18n.methods.checkPlain = function (str) {
+        var character, regex,
+        replace = {
+            '&': '&amp;',
+            '"': '&quot;',
+            '<': '&lt;',
+            '>': '&gt;'
+        };
+        str = String(str);
+        for (character in replace) {
+            if (replace.hasOwnProperty(character)) {
+                regex = new RegExp(character, 'g');
+                str = str.replace(regex, replace[character]);
+            }
+        }
+        return str;
+    };
+
+    /**
+     * Replace placeholders with sanitized values in a string.
+     *
+     * @param str
+     *   A string with placeholders.
+     * @param args
+     *   An object of replacements pairs to make. Incidences of any key in this
+     *   array are replaced with the corresponding value. Based on the first
+     *   character of the key, the value is escaped and/or themed:
+     *    - !variable: inserted as is
+     *    - @variable: escape plain text to HTML (i18n.methods.checkPlain)
+     *    - %variable: escape text and theme as a placeholder for user-submitted
+     *      content (checkPlain + <em class="placeholder" > )
+     *
+     * @see i18n.methods.t()
+     */
+    i18n.methods.formatString = function(str, args) {
+        // Transform arguments before inserting them.
+        for (var key in args) {
+            switch (key.charAt(0)) {
+                // Escaped only.
+                case '@':
+                    args[key] = i18n.methods.checkPlain(args[key]);
+                    break;
+                // Pass-through.
+                case '!':
+                    break;
+                // Escaped and placeholder.
+                case '%':
+                default:
+                    args[key] = '<em class="placeholder">' + i18n.methods.checkPlain(args[key]) + '</em>';
+                    break;
+            }
+            str = str.replace(key, args[key]);
+        }
+        return str;
+    };
+
+    /**
+     * Translate strings to the page language or a given language.
+     *
+     * See the documentation of the server-side t() function for further details.
+     *
+     * @param str
+     *   A string containing the English string to translate.
+     * @param args
+     *   An object of replacements pairs to make after translation. Incidences
+     *   of any key in this array are replaced with the corresponding value.
+     *   See i18n.methods.formatString().
+     *
+     * @param options
+     *   - 'context' (defaults to the default context): The context the source string
+     *     belongs to.
+     *
+     * @return
+     *   The translated string.
+     */
+    i18n.methods.t = function (str, args, options) {
+
+        // Fetch the localized version of the string.
+        if (i18n.locale.strings && i18n.locale.strings[options.context] && i18n.locale.strings[options.context][str]) {
+            str = i18n.locale.strings[options.context][str];
+        }
+
+        if (args) {
+            str = i18n.methods.formatString(str, args);
+        }
+        return str;
+    };
+
+
+    /**
+     * Wrapper for i18n.methods.t()
+     *
+     * @see i18n.methods.t()
+     * @throws InvalidArgumentException
+     */
+    i18n.t = function(str, args, options) {
+
+        if (typeof str === 'string' && str.length > 0) {
+
+            // check every time due languge can change for
+            // different reasons (translation, lang switcher ..)
+            var lang = i18n.locale.getLanguage();
+
+            options = options || {
+                "context" : lang.language
+            };
+
+            return i18n.methods.t(str, args, options);
+        }
+        else {
+            throw {
+                "name" : 'InvalidArgumentException',
+                "message" : 'First argument is either not a string or empty.'
+            }
+        }
+    };
+
+// end i18n
+    exports.i18n = i18n;
+}(document, mejs));
+
+;(function(exports, undefined) {
+
+	"use strict";
+
+	if ( mejs.i18n.locale.language && mejs.i18n.locale.strings ) {
+		exports[mejs.i18n.locale.language] = mejs.i18n.locale.strings;
+	}
+
+}(mejs.i18n.locale.strings));
+
+/*!
+ * This is a i18n.locale language object.
+ *
+ *<de> German translation by Tim Latz, latz.tim@gmail.com
+ *
+ * @author
+ *   Tim Latz (latz.tim@gmail.com)
+ *
+ * @see
+ *   me-i18n.js
+ *
+ * @params
+ *  - exports - CommonJS, window ..
+ */
+;(function(exports, undefined) {
+
+    "use strict";
+
+    exports.de = {
+        "Fullscreen" : "Vollbild",
+        "Go Fullscreen" : "Vollbild an",
+        "Turn off Fullscreen" : "Vollbild aus",
+        "Close" : "Schließen"
+    };
+
+}(mejs.i18n.locale.strings));
+/*!
+ * This is a i18n.locale language object.
+ *
+ *<de> Traditional chinese translation by Tim Latz, latz.tim@gmail.com
+ *
+ * @author
+ *   Tim Latz (latz.tim@gmail.com)
+ *
+ * @see
+ *   me-i18n.js
+ *
+ * @params
+ *  - exports - CommonJS, window ..
+ */
+;(function(exports, undefined) {
+
+    "use strict";
+
+    exports.zh = {
+        "Fullscreen" : "全螢幕",
+        "Go Fullscreen" : "全屏模式",
+        "Turn off Fullscreen" : "退出全屏模式",
+        "Close" : "關閉"
+    };
+
+}(mejs.i18n.locale.strings));
 
